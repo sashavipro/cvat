@@ -4,8 +4,9 @@
 // SPDX-License-Identifier: MIT
 
 import React, { useEffect, useCallback } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
 import { Col } from 'antd/lib/grid';
-import Icon, { InfoCircleOutlined } from '@ant-design/icons';
+import Icon, { InfoCircleOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
 import Select from 'antd/lib/select';
 import Button from 'antd/lib/button';
 import Modal from 'antd/lib/modal';
@@ -16,7 +17,9 @@ import config from 'config';
 import {
     DimensionType, Job, JobStage, JobState,
 } from 'cvat-core-wrapper';
-import { Workspace } from 'reducers';
+import { CombinedState, Workspace } from 'reducers';
+import CVATTooltip from 'components/common/cvat-tooltip';
+import { toggleViewOriginalAsync } from 'actions/masks-actions';
 
 import MDEditor from '@uiw/react-md-editor';
 import rehypeSanitize from 'rehype-sanitize';
@@ -41,6 +44,12 @@ function RightGroup(props: Props): JSX.Element {
         annotationFilters,
         initialOpenGuide,
     } = props;
+
+    const dispatch = useDispatch();
+    const { canViewOriginal, viewOriginal } = useSelector((state: CombinedState) => ({
+        canViewOriginal: state.masks.canViewOriginal,
+        viewOriginal: state.masks.viewOriginal,
+    }));
 
     const filters = annotationFilters.length;
 
@@ -151,6 +160,20 @@ function RightGroup(props: Props): JSX.Element {
                 <Icon component={FilterIcon} />
                 Filters
             </Button>
+            {canViewOriginal && (
+                <CVATTooltip title={viewOriginal ? 'Viewing Original Image (Unmasked). Click to switch to Masked.' : 'Viewing Masked Image (Redacted). Click to switch to Original.'}>
+                    <Button
+                        type='link'
+                        className={`cvat-annotation-header-button ${viewOriginal ? 'filters-armed' : ''}`}
+                        onClick={(): void => {
+                            dispatch(toggleViewOriginalAsync());
+                        }}
+                    >
+                        {viewOriginal ? <EyeOutlined /> : <EyeInvisibleOutlined />}
+                        {viewOriginal ? 'Original' : 'Masked'}
+                    </Button>
+                </CVATTooltip>
+            )}
             <div>
                 <Select
                     popupClassName='cvat-workspace-selector-dropdown'

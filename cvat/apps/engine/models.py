@@ -1362,6 +1362,7 @@ class Job(TimestampedModel, AssignableModel, FileSystemRelatedModel):
 
     labeledinterval_set: models.manager.RelatedManager[LabeledInterval]
     labeledintervalattributeval_set: models.manager.RelatedManager[LabeledIntervalAttributeVal]
+    mask_regions: models.manager.RelatedManager[FrameMaskRegion]
 
     user_can_view_task: db_utils.MaybeUndefined[bool]
     "Can be defined by the fetching queryset to avoid extra IAM checks, e.g. in a list serializer"
@@ -1779,6 +1780,42 @@ class Comment(TimestampedModel):
 
     def get_job_id(self):
         return self.issue.get_job_id()
+
+
+class FrameMaskRegion(TimestampedModel):
+    job = models.ForeignKey(
+        Job, on_delete=models.CASCADE, related_name="mask_regions", related_query_name="mask_region"
+    )
+    frame = models.PositiveIntegerField()
+    points = models.JSONField()
+    z_order = models.IntegerField(default=0)
+    color = models.CharField(max_length=32, default="#000000")
+    track_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    is_keyframe = models.BooleanField(default=True)
+    outside = models.BooleanField(default=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    class Meta:
+        default_permissions = ()
+        indexes = [models.Index(fields=["job", "frame"])]
+
+    def get_project_id(self):
+        return self.job.get_project_id()
+
+    @property
+    def organization_id(self):
+        return self.job.organization_id
+
+    def get_organization_slug(self):
+        return self.job.get_organization_slug()
+
+    def get_task_id(self):
+        return self.job.get_task_id()
+
+    def get_job_id(self):
+        return self.job_id
 
 
 class Manifest(models.Model):

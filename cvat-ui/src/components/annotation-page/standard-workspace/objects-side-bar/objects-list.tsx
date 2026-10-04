@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: MIT
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { useSelector } from 'react-redux';
 
 import {
     DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor,
@@ -25,6 +26,7 @@ import {
 } from 'utils/objects-sidebar';
 
 import ObjectListHeader from './objects-list-header';
+import MasksListSideBarComponent from './masks-list';
 import {
     type LayerPlacement,
     type PointerPosition,
@@ -97,6 +99,47 @@ function ObjectListComponent(props: Props): JSX.Element {
         showAllStates,
         changeShowGroundTruth,
     } = props;
+
+    const currentFrame = useSelector((state: CombinedState) => (
+        state.annotation.player.frame.number ?? state.masks?.currentFrame ?? 0
+    ));
+    const maskRegions = useSelector((state: CombinedState) => state.masks?.maskRegions || []);
+
+    const tracksMap = new Map<number, any[]>();
+    let currentFrameShapesCount = 0;
+    for (const region of maskRegions) {
+        const tid = region.track_id ?? region.trackId;
+        if (tid != null) {
+            if (!tracksMap.has(tid)) {
+                tracksMap.set(tid, []);
+            }
+            tracksMap.get(tid)!.push(region);
+        } else if (region.frame === currentFrame) {
+            currentFrameShapesCount++;
+        }
+    }
+
+    let visibleTracksCount = 0;
+    for (const [, keyframes] of tracksMap.entries()) {
+        keyframes.sort((a: any, b: any) => a.frame - b.frame);
+        if (keyframes.length === 0 || currentFrame < keyframes[0].frame) continue;
+        const currentKf = keyframes.find((k: any) => k.frame === currentFrame);
+        if (currentKf) {
+            visibleTracksCount++;
+            continue;
+        }
+        let prevKf: any = null;
+        for (const k of keyframes) {
+            if (k.frame <= currentFrame) {
+                prevKf = k;
+            }
+        }
+        if (prevKf && !prevKf.outside) {
+            visibleTracksCount++;
+        }
+    }
+
+    const totalMaskObjects = visibleTracksCount + currentFrameShapesCount;
 
     const sensors = useSensors(useSensor(PointerSensor, {
         activationConstraint: {
@@ -329,7 +372,7 @@ function ObjectListComponent(props: Props): JSX.Element {
                 switchLockAllShortcut={switchLockAllShortcut}
                 switchHiddenAllShortcut={switchHiddenAllShortcut}
                 showGroundTruth={showGroundTruth}
-                count={objectStates.length}
+                count={objectStates.length + totalMaskObjects}
                 changeStatesOrdering={changeStatesOrdering}
                 lockAllStates={lockAllStates}
                 unlockAllStates={unlockAllStates}
@@ -340,6 +383,7 @@ function ObjectListComponent(props: Props): JSX.Element {
                 changeShowGroundTruth={changeShowGroundTruth}
             />
             <div className='cvat-objects-sidebar-states-list'>
+                <MasksListSideBarComponent />
                 {statesOrdering === StatesOrdering.LAYER ? (
                     <div className='cvat-objects-sidebar-z-layers-panel'>
                         <div className='cvat-objects-sidebar-z-layers-title'>

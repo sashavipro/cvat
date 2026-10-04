@@ -30,6 +30,7 @@ from .models import (
     AnnotationGuide,
     CloudStorage,
     Comment,
+    FrameMaskRegion,
     Issue,
     Job,
     Label,
@@ -1021,6 +1022,8 @@ class JobPermission(OpenPolicyAgentPermission, DownloadExportedExtension):
             ("download_dataset", "GET"): DownloadExportedExtension.Scopes.DOWNLOAD_EXPORTED_FILE,
             # deprecated API
             ("dataset_export", "GET"): Scopes.EXPORT_DATASET,
+            ("masks", "GET"): Scopes.VIEW,
+            ("masks", "POST"): Scopes.UPDATE_ANNOTATIONS,
         }[(view.action, request.method)]
 
         scopes = []
@@ -1327,6 +1330,123 @@ class IssuePermission(OpenPolicyAgentPermission):
                     "assignee": {"id": self.assignee_id},
                 }
             )
+
+        return data
+
+
+class FrameMaskRegionPermission(OpenPolicyAgentPermission):
+    obj: FrameMaskRegion | None
+
+    class Scopes(StrEnum):
+        LIST = "list"
+        CREATE = "create"
+        CREATE_IN_JOB = "create@job"
+        DELETE = "delete"
+        UPDATE = "update"
+        VIEW = "view"
+        VIEW_ORIGINAL = "view_original"
+
+    @classmethod
+    def create(
+        cls, request: ExtendedRequest, view: ViewSet, obj: FrameMaskRegion | None, iam_context: dict[str, Any]
+    ) -> list[OpenPolicyAgentPermission]:
+        permissions = []
+        for scope in cls.get_scopes(request, view, obj):
+            self = cls.create_base_perm(
+                request,
+                view,
+                scope,
+                iam_context,
+                obj,
+                job_id=request.data.get("job"),
+            )
+            permissions.append(self)
+        return permissions
+
+    @classmethod
+    def create_scope_view_original(cls, request: ExtendedRequest, job: Job) -> OpenPolicyAgentPermission:
+        iam_context = get_iam_context(request, job)
+        return cls.create_base_perm(
+            request,
+            None,
+            cls.Scopes.VIEW_ORIGINAL,
+            iam_context,
+            None,
+            job_id=job.id,
+        )
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.url = settings.IAM_OPA_DATA_URL + "/masks/allow"
+
+    @classmethod
+    def _get_scopes(cls, request: ExtendedRequest, view: ViewSet, obj: FrameMaskRegion | None):
+        Scopes = cls.Scopes
+        return [
+            {
+                "list": Scopes.LIST,
+                "create": Scopes.CREATE_IN_JOB,
+                "destroy": Scopes.DELETE,
+                "partial_update": Scopes.UPDATE,
+                "retrieve": Scopes.VIEW,
+            }[view.action]
+        ]
+
+    def get_resource(self):
+        data = None
+
+        def get_common_data(db_job):
+            if db_job.segment.task.project:
+                organization_id = db_job.segment.task.project.organization_id
+            else:
+                organization_id = db_job.segment.task.organization_id
+
+            data = {
+                "project": (
+                    {
+                        "owner": {"id": db_job.segment.task.project.owner_id},
+                        "assignee": {"id": db_job.segment.task.project.assignee_id},
+                    }
+                    if db_job.segment.task.project
+                    else None
+                ),
+                "task": {
+                    "owner": {"id": db_job.segment.task.owner_id},
+                    "assignee": {"id": db_job.segment.task.assignee_id},
+                },
+                "job": {"assignee": {"id": db_job.assignee_id}},
+                "organization": {"id": organization_id},
+            }
+
+            return data
+
+        if self.obj:
+            db_job = self.obj.job
+            data = get_common_data(db_job)
+            data.update(
+                {
+                    "id": self.obj.id,
+                    "owner": {"id": self.obj.owner_id},
+                }
+            )
+        elif self.scope.startswith(self.Scopes.CREATE):
+            job_id = self.job_id
+            try:
+                db_job = Job.objects.get(id=job_id)
+            except Job.DoesNotExist as ex:
+                raise ValidationError(str(ex))
+            data = get_common_data(db_job)
+            data.update(
+                {
+                    "owner": {"id": self.user_id},
+                }
+            )
+        elif self.scope == self.Scopes.VIEW_ORIGINAL and self.job_id:
+            try:
+                db_job = Job.objects.get(id=self.job_id)
+            except Job.DoesNotExist as ex:
+                raise ValidationError(str(ex))
+            data = get_common_data(db_job)
 
         return data
 

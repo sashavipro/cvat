@@ -148,6 +148,7 @@ export interface DrawData {
     simplifyPoly?: boolean;
     onDrawDone?: (data: object) => void;
     onUpdateConfiguration?: (configuration: { brushTool?: Pick<BrushTool, 'size'> }) => void;
+    onMaskRegionDrawn?: (points: number[]) => void;
 }
 
 export interface InteractionData {
@@ -225,6 +226,7 @@ export enum UpdateReasons {
     GRID_UPDATED = 'grid_updated',
 
     ISSUE_REGIONS_UPDATED = 'issue_regions_updated',
+    MASK_REGIONS_UPDATED = 'mask_regions_updated',
     OBJECTS_UPDATED = 'objects_updated',
     SHAPE_ACTIVATED = 'shape_activated',
     SHAPE_FOCUSED = 'shape_focused',
@@ -298,6 +300,9 @@ export interface CanvasModel {
 
     setup(frameData: any, objectStates: any[], renderData?: RenderData): void;
     setupIssueRegions(issueRegions: Record<number, { hidden: boolean; points: number[] }>): void;
+    setupMaskRegions(maskRegions: any[]): void;
+    updateImage(image: Image): void;
+    readonly maskRegions: any[];
     activate(clientID: number | null, attributeID: number | null): void;
     highlight(clientIDs: number[], severity: HighlightSeverity): void;
     rotate(rotationAngle: number): void;
@@ -395,6 +400,7 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
         objects: any[];
         renderData: RenderData;
         issueRegions: Record<number, { hidden: boolean; points: number[] }>;
+        maskRegions: any[];
         scale: number;
         top: number;
         left: number;
@@ -476,6 +482,7 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
                 visibleSkeletonElements: {},
             },
             issueRegions: {},
+            maskRegions: [],
             scale: 1,
             top: 0,
             left: 0,
@@ -683,6 +690,16 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
         this.notify(UpdateReasons.ISSUE_REGIONS_UPDATED);
     }
 
+    public setupMaskRegions(maskRegions: any[]): void {
+        this.data.maskRegions = maskRegions || [];
+        this.notify(UpdateReasons.MASK_REGIONS_UPDATED);
+    }
+
+    public updateImage(image: Image): void {
+        this.data.image = image;
+        this.notify(UpdateReasons.IMAGE_CHANGED);
+    }
+
     public activate(clientID: number | null, attributeID: number | null): void {
         if (this.data.activeElement.clientID === clientID && this.data.activeElement.attributeID === attributeID) {
             return;
@@ -786,7 +803,7 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
         const rotatedShapeFitter = drawData.rotatedShapeFitter ?? this.data.drawData.rotatedShapeFitter;
 
         const supportedShapes = [
-            'rectangle', 'polygon', 'polyline', 'points', 'ellipse', 'cuboid', 'skeleton', 'mask',
+            'rectangle', 'polygon', 'polyline', 'points', 'ellipse', 'cuboid', 'skeleton', 'mask', 'mask_region',
         ];
         if (![Mode.IDLE, Mode.DRAW].includes(this.data.mode)) {
             throw Error(`Canvas is busy. Action: ${this.data.mode}`);
@@ -838,7 +855,7 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
 
         // install default values for drawing method
         if (drawData.enabled) {
-            if (drawData.shapeType === 'rectangle') {
+            if (drawData.shapeType === 'rectangle' || drawData.shapeType === 'mask_region') {
                 this.data.drawData.rectDrawingMethod = drawData.rectDrawingMethod || RectDrawingMethod.CLASSIC;
             }
             if (drawData.shapeType === 'cuboid') {
@@ -1134,6 +1151,10 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
 
     public get issueRegions(): Record<number, { hidden: boolean; points: number[] }> {
         return { ...this.data.issueRegions };
+    }
+
+    public get maskRegions(): any[] {
+        return [...this.data.maskRegions];
     }
 
     public get objects(): any[] {

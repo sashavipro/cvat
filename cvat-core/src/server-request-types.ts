@@ -106,3 +106,14 @@ export type APIUserGrowthDataModifiableFields = Partial<Pick<
     'github_prompt_shown' | 'github_prompt_support_clicked' | 'promotion_notifications_allowed'
 >>;
 export type UserGrowthDataModifiableFields = Camelized<APIUserGrowthDataModifiableFields>;
+
+export interface SerializedFrameMaskRegionWrite {
+    job?: number;
+    frame?: number;
+    points: number[];
+    z_order?: number;
+    color?: string;
+    track_id?: number | null;
+    is_keyframe?: boolean;
+    outside?: boolean;
+}

@@ -24,6 +24,8 @@ interface Canvas {
     html(): HTMLDivElement;
     setup(frameData: any, objectStates: any[], renderData?: RenderData): void;
     setupIssueRegions(issueRegions: Record<number, { hidden: boolean; points: number[] }>): void;
+    setupMaskRegions(maskRegions: any[]): void;
+    updateImage(image: any): void;
     translateFromSVG(points: number[]): number[];
     setupConflictRegions(clientID: number): number[];
     activate(clientID: number | null, attributeID?: number): void;
@@ -81,6 +83,14 @@ class CanvasImpl implements Canvas {
 
     public setupIssueRegions(issueRegions: Record<number, { hidden: boolean; points: number[] }>): void {
         this.model.setupIssueRegions(issueRegions);
+    }
+
+    public setupMaskRegions(maskRegions: any[]): void {
+        this.model.setupMaskRegions(maskRegions);
+    }
+
+    public updateImage(image: any): void {
+        this.model.updateImage(image);
     }
 
     public translateFromSVG(points: number[]): number[] {

@@ -40,6 +40,7 @@ import {
     ShapeType, ObjectType, LabelType, ModelKind, ModelProviders,
     DimensionType, JobType, Source, MembershipRole,
     JobStage, JobState, RQStatus, StorageLocation, MediaType,
+    HistoryActions,
 } from 'cvat-core/src/enums';
 import { Storage, StorageData } from 'cvat-core/src/storage';
 import Issue from 'cvat-core/src/issue';
@@ -144,6 +145,7 @@ export {
     AboutData,
     BaseImageFilter,
     fetchAndAssembleAudio,
+    HistoryActions,
 };
 
 export type {

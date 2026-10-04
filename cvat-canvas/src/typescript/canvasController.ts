@@ -28,6 +28,7 @@ export interface CanvasController {
     readonly objects: any[];
     readonly renderData: RenderData;
     readonly issueRegions: Record<number, { hidden: boolean; points: number[] }>;
+    readonly maskRegions: any[];
     readonly focusData: FocusData;
     readonly activeElement: ActiveElement;
     readonly highlightedElements: HighlightedElements;
@@ -117,6 +118,10 @@ export class CanvasControllerImpl implements CanvasController {
 
     public get issueRegions(): Record<number, { hidden: boolean; points: number[] }> {
         return this.model.issueRegions;
+    }
+
+    public get maskRegions(): any[] {
+        return this.model.maskRegions;
     }
 
     public get objects(): any[] {

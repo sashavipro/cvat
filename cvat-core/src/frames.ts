@@ -391,12 +391,15 @@ export class FrameData {
         );
     }
 
-    async data(onServerRequest = () => {}): Promise<{
+    async data(options: {
+        onServerRequest?: () => void;
+        original?: boolean;
+    } | (() => void) = () => {}): Promise<{
         renderWidth: number;
         renderHeight: number;
         imageData: ImageBitmap | Blob;
     }> {
-        const result = await PluginRegistry.apiWrapper.call(this, FrameData.prototype.data, onServerRequest);
+        const result = await PluginRegistry.apiWrapper.call(this, FrameData.prototype.data, options);
         return result;
     }
 }
@@ -456,7 +459,43 @@ class PrefetchAnalyzer {
 }
 
 Object.defineProperty(FrameData.prototype.data, 'implementation', {
-    async value(this: FrameData, onServerRequest) {
+    async value(
+        this: FrameData,
+        options: {
+            onServerRequest?: () => void;
+            original?: boolean;
+        } | (() => void) = () => {},
+    ) {
+        let onServerRequest = () => {};
+        let original = false;
+
+        if (typeof options === 'function') {
+            onServerRequest = options;
+        } else if (options && typeof options === 'object') {
+            if (typeof options.onServerRequest === 'function') {
+                onServerRequest = options.onServerRequest;
+            }
+            if (typeof options.original === 'boolean') {
+                original = options.original;
+            }
+        }
+
+        if (original) {
+            onServerRequest();
+            const buffer = await serverProxy.frames.getFrame(this.jobID, this.number, 'original', true);
+            let imageData: ImageBitmap | Blob;
+            if (typeof createImageBitmap === 'function') {
+                imageData = await createImageBitmap(new Blob([buffer]));
+            } else {
+                imageData = new Blob([buffer], { type: 'image/jpeg' });
+            }
+            return {
+                renderWidth: this.width,
+                renderHeight: this.height,
+                imageData,
+            };
+        }
+
         const {
             provider, prefetchAnalyzer, chunkSize, jobStartFrame,
             decodeForward, forwardStep, decodedBlocksCacheSize, segmentFrameNumbers,

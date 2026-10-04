@@ -468,3 +468,18 @@ export interface SerializedTaskValidationLayout extends SerializedJobValidationL
     validation_frames?: number[];
     disabled_frames?: number[];
 }
+
+export interface SerializedFrameMaskRegion {
+    id: number;
+    job: number;
+    frame: number;
+    points: number[];
+    z_order: number;
+    color?: string;
+    track_id?: number | null;
+    is_keyframe?: boolean;
+    outside?: boolean;
+    owner?: SerializedUser | null;
+    created_date?: string;
+    updated_date?: string;
+}

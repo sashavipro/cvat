@@ -40,8 +40,9 @@ from cvat.apps.dataset_manager.bindings import (
     match_dm_item,
 )
 from cvat.apps.dataset_manager.util import make_zip_archive
+from cvat.apps.engine.mask_utils import apply_masks_to_image_bytes, get_interpolated_masks_for_frame
 from cvat.apps.engine.media_io.frame_provider import FrameOutputType, make_frame_provider
-from cvat.apps.engine.models import FrameQuality, TaskMode
+from cvat.apps.engine.models import FrameMaskRegion, FrameQuality, TaskMode
 
 from .registry import dm_env, exporter, importer
 
@@ -1591,8 +1592,24 @@ def dump_media_files(
         )
         img_path = osp.join(img_dir, frame_name + ext)
         os.makedirs(osp.dirname(img_path), exist_ok=True)
+        img_bytes = frame.data.getvalue()
+        if hasattr(instance_data.db_instance, "segment"):
+            mask_regions = get_interpolated_masks_for_frame(instance_data.db_instance, frame_id)
+        else:
+            segment = instance_data.db_instance.segment_set.filter(
+                start_frame__lte=frame_id, stop_frame__gte=frame_id
+            ).first()
+            job = segment.job_set.first() if segment else (
+                instance_data.db_instance.segment_set.first().job_set.first()
+                if instance_data.db_instance.segment_set.exists()
+                else None
+            )
+            mask_regions = get_interpolated_masks_for_frame(job, frame_id) if job else []
+        if mask_regions:
+            img_bytes = apply_masks_to_image_bytes(img_bytes, mask_regions).getvalue()
+
         with open(img_path, "wb") as f:
-            f.write(frame.data.getvalue())
+            f.write(img_bytes)
 
 
 def _export_task_or_job(dst_file, temp_dir, instance_data, anno_callback, save_images=False):

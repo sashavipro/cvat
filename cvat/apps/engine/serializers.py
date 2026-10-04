@@ -4333,6 +4333,71 @@ class IssueWriteSerializer(WriteOnceMixin, serializers.ModelSerializer):
         write_once_fields = ("frame", "job", "message")
 
 
+class FrameMaskRegionReadSerializer(serializers.ModelSerializer):
+    owner = BasicUserSerializer(allow_null=True, required=False)
+    points = serializers.ListField(child=serializers.FloatField(), allow_empty=False)
+
+    class Meta:
+        model = models.FrameMaskRegion
+        fields = (
+            "id",
+            "job",
+            "frame",
+            "points",
+            "z_order",
+            "color",
+            "track_id",
+            "is_keyframe",
+            "outside",
+            "owner",
+            "created_date",
+            "updated_date",
+        )
+        read_only_fields = fields
+        extra_kwargs = {
+            "created_date": {"allow_null": True},
+            "updated_date": {"allow_null": True},
+        }
+
+
+class FrameMaskRegionWriteSerializer(WriteOnceMixin, serializers.ModelSerializer):
+    points = serializers.ListField(
+        child=serializers.FloatField(),
+        allow_empty=False,
+    )
+    color = serializers.CharField(max_length=32, required=False, default="#000000")
+    track_id = serializers.IntegerField(required=False, allow_null=True, default=None)
+    is_keyframe = serializers.BooleanField(required=False, default=True)
+    outside = serializers.BooleanField(required=False, default=False)
+
+    def to_representation(self, instance):
+        serializer = FrameMaskRegionReadSerializer(instance, context=self.context)
+        return serializer.data
+
+    def validate_points(self, points):
+        if len(points) != 4 and len(points) < 6:
+            raise serializers.ValidationError(
+                "Points must contain 4 numbers for a rectangle [x1, y1, x2, y2] or at least 6 for a polygon"
+            )
+        return points
+
+    def validate(self, attrs):
+        job = attrs.get("job") or (self.instance.job if self.instance else None)
+        frame = attrs.get("frame") if "frame" in attrs else (self.instance.frame if self.instance else None)
+        if job and frame is not None:
+            segment = job.segment
+            if frame < segment.start_frame or frame > segment.stop_frame:
+                raise serializers.ValidationError(
+                    f"Frame {frame} is out of job range [{segment.start_frame}, {segment.stop_frame}]"
+                )
+        return attrs
+
+    class Meta:
+        model = models.FrameMaskRegion
+        fields = ("id", "job", "frame", "points", "z_order", "color", "track_id", "is_keyframe", "outside")
+        write_once_fields = ("job",)
+
+
 class ManifestSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.Manifest

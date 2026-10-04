@@ -27,6 +27,7 @@ import MLModel from './ml-model';
 import Issue from './issue';
 import Comment from './comment';
 import { FrameData, FramesMetaData } from './frames';
+import FrameMaskRegion from './mask-region';
 import CloudStorage from './cloud-storage';
 import Organization, { Invitation } from './organization';
 import Webhook from './webhook';
@@ -245,6 +246,7 @@ export default interface CVATCore {
         Comment: typeof Comment;
         Issue: typeof Issue;
         FrameData: typeof FrameData;
+        FrameMaskRegion: typeof FrameMaskRegion;
         CloudStorage: typeof CloudStorage;
         Organization: typeof Organization;
         Webhook: typeof Webhook;
@@ -273,3 +275,5 @@ export default interface CVATCore {
     };
 // eslint-disable-next-line semi
 }
+
+export { FrameMaskRegion };

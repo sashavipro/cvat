@@ -1,0 +1,314 @@
+// Copyright (C) CVAT.ai Corporation
+//
+// SPDX-License-Identifier: MIT
+
+.cvat-ir-panel,
+.cvat-ir-panel * {
+    box-sizing: border-box;
+}
+
+.cvat-ir-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 10px;
+    background: #fff;
+    font-family: inherit;
+}
+
+.cvat-ir-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #f0f0f0;
+    flex-shrink: 0;
+}
+
+.cvat-ir-toolbar-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: #1f1f1f;
+}
+
+.cvat-ir-toolbar-left {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.cvat-ir-count {
+    font-size: 12px;
+    font-weight: 600;
+    color: #595959;
+    white-space: nowrap;
+
+    .cvat-ir-count-open {
+        color: #fa8c16;
+    }
+
+    .cvat-ir-count-resolved {
+        color: #52c41a;
+    }
+}
+
+.cvat-ir-refresh-btn {
+    flex-shrink: 0;
+    cursor: pointer;
+    border: 1px solid #d9d9d9;
+    background: #fff;
+    border-radius: 4px;
+    padding: 3px 12px;
+    font-size: 12px;
+    line-height: 1.4;
+    transition: border-color 0.15s ease, color 0.15s ease;
+
+    &:hover {
+        border-color: #40a9ff;
+        color: #40a9ff;
+    }
+}
+
+.cvat-ir-toolbar-secondary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    margin-bottom: 10px;
+    flex-shrink: 0;
+}
+
+.cvat-ir-icon-btn {
+    cursor: pointer;
+    border: 1px solid #d9d9d9;
+    background: #fff;
+    border-radius: 4px;
+    width: 30px;
+    height: 26px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    line-height: 1;
+    color: #595959;
+    transition: all 0.2s ease;
+    user-select: none;
+
+    &:hover {
+        border-color: #40a9ff;
+        color: #40a9ff;
+    }
+
+    &:active {
+        background: #f0f0f0;
+    }
+
+    &:disabled {
+        cursor: not-allowed;
+        opacity: 0.4;
+    }
+
+    /* Green active highlight for eye and check buttons */
+    &.active-green {
+        background: #f6ffed !important;
+        border-color: #52c41a !important;
+        color: #52c41a !important;
+        box-shadow: 0 0 0 1px #52c41a, 0 2px 5px rgba(82, 196, 26, 0.2) !important;
+        font-weight: 700;
+
+        &:hover {
+            background: #d9f7be !important;
+            border-color: #389e0d !important;
+            color: #389e0d !important;
+        }
+    }
+
+    /* Inactive state */
+    &.inactive {
+        background: #fafafa !important;
+        border-color: #d9d9d9 !important;
+        color: #bfbfbf !important;
+        opacity: 0.65;
+
+        &:hover {
+            opacity: 1;
+            border-color: #8c8c8c !important;
+            color: #595959 !important;
+        }
+    }
+}
+
+.cvat-ir-current-indicator {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    overflow: hidden;
+    padding: 0 4px;
+}
+
+.cvat-ir-current-badge {
+    background: #e6f4ff;
+    border: 1px solid #91caff;
+    color: #0958d9;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    transition: all 0.2s ease;
+}
+
+.cvat-ir-current-none {
+    color: #8c8c8c;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cvat-ir-list {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.cvat-ir-card {
+    width: 100%;
+    border: 1px solid #ebebeb;
+    border-left: 3px solid #d9d9d9;
+    border-radius: 6px;
+    padding: 8px 10px;
+    cursor: pointer;
+    background: #fafafa;
+    transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    overflow: hidden;
+
+    &:hover {
+        background: #f0f7ff;
+        border-color: #91caff;
+    }
+
+    &.open {
+        border-left-color: #fa8c16;
+    }
+
+    &.resolved {
+        border-left-color: #52c41a;
+    }
+
+    /* Active card highlight on current frame */
+    &.active {
+        background: #e6f4ff !important;
+        border-color: #4096ff !important;
+        border-left-width: 4px !important;
+        box-shadow: 0 0 0 1.5px #1677ff, 0 3px 10px rgba(22, 119, 255, 0.16) !important;
+        transform: translateY(-1px);
+
+        .cvat-ir-frame {
+            color: #0958d9;
+            font-weight: 700;
+        }
+    }
+}
+
+.cvat-ir-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.cvat-ir-frame {
+    font-weight: 600;
+    font-size: 13px;
+    color: #1f1f1f;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cvat-ir-badge {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 2px 9px;
+    border-radius: 10px;
+    color: #fff;
+    text-transform: uppercase;
+    line-height: 1.5;
+
+    &.open {
+        background: #fa8c16;
+    }
+
+    &.resolved {
+        background: #52c41a;
+    }
+}
+
+.cvat-ir-meta {
+    font-size: 11px;
+    color: #8c8c8c;
+    margin-bottom: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cvat-ir-comment-block {
+    background: #fff;
+    border: 1px solid #f0f0f0;
+    border-radius: 4px;
+    padding: 5px 8px;
+    margin-top: 5px;
+}
+
+.cvat-ir-comment-label {
+    font-size: 10px;
+    color: #a6a6a6;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.cvat-ir-comment {
+    font-size: 12px;
+    color: #333;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.cvat-ir-empty,
+.cvat-ir-loading,
+.cvat-ir-error {
+    text-align: center;
+    color: #8c8c8c;
+    margin-top: 24px;
+    font-size: 13px;
+    padding: 0 8px;
+}
+
+.cvat-ir-error {
+    color: #cf1322;
+}

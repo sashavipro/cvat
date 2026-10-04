@@ -1,0 +1,12 @@
+# syntax=docker/dockerfile:1
+FROM cvat/server:dev
+
+USER root
+
+COPY cvat/apps/ /opt/cvat/cvat/apps/
+
+RUN find /opt/cvat -name "*.sh" -exec sed -i 's/\r$//' {} + && \
+    find /opt/cvat/backend_entrypoint.d -type f -exec sed -i 's/\r$//' {} + && \
+    python -m compileall -q /opt/cvat
+
+USER 1000:1000

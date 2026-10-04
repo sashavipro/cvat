@@ -26,6 +26,7 @@ interface StateToProps {
     stopFrame: number;
     dimension: DimensionType;
     assignee: any | null;
+    maskRegions: any[];
 }
 
 interface DispatchToProps {
@@ -57,6 +58,7 @@ function mapStateToProps(state: CombinedState): StateToProps {
         stopFrame,
         dimension,
         assignee: assignee?.username || 'Nobody',
+        maskRegions: state.masks.maskRegions || [],
     };
 }
 
@@ -79,6 +81,7 @@ function StatisticsModalComponent(props: StateToProps & DispatchToProps): JSX.El
         bugTracker,
         closeStatistics,
         dimension,
+        maskRegions,
     } = props;
 
     const is2D = dimension === DimensionType.DIMENSION_2D;
@@ -99,6 +102,50 @@ function StatisticsModalComponent(props: StateToProps & DispatchToProps): JSX.El
         );
     }
 
+    // Compute privacy mask (ОПФ) statistics
+    const maskShapeRegions = maskRegions.filter((r: any) => r.track_id == null && r.trackId == null);
+    const maskShapes = maskShapeRegions.length;
+
+    const tracksMap = new Map<number, any[]>();
+    for (const region of maskRegions) {
+        const tid = region.track_id ?? region.trackId;
+        if (tid != null) {
+            if (!tracksMap.has(tid)) {
+                tracksMap.set(tid, []);
+            }
+            tracksMap.get(tid)!.push(region);
+        }
+    }
+    const maskTracks = tracksMap.size;
+    const totalMaskObjects = maskShapes + maskTracks;
+
+    let trackManually = 0;
+    let trackInterpolated = 0;
+    for (const [, keyframes] of tracksMap.entries()) {
+        keyframes.sort((a, b) => a.frame - b.frame);
+        if (!keyframes.length) continue;
+        let prevKf = keyframes[0];
+        let visibleKf = false;
+        for (const kf of keyframes) {
+            if (visibleKf) {
+                trackInterpolated += Math.max(0, kf.frame - prevKf.frame - 1);
+            }
+            visibleKf = !kf.outside;
+            prevKf = kf;
+            if (visibleKf) {
+                trackManually += 1;
+            }
+        }
+        const lastKf = keyframes[keyframes.length - 1];
+        if (lastKf.frame < stopFrame && !lastKf.outside) {
+            trackInterpolated += Math.max(0, stopFrame - lastKf.frame);
+        }
+    }
+
+    const maskManually = maskShapes + trackManually;
+    const maskInterpolated = trackInterpolated;
+    const maskTotalFrames = maskManually + maskInterpolated;
+
     const rows = Object.keys(data.label).map((key: string) => ({
         key,
         label: key,
@@ -116,9 +163,28 @@ function StatisticsModalComponent(props: StateToProps & DispatchToProps): JSX.El
         total: data.label[key].total,
     }));
 
+    // Add Privacy Mask (ОПФ) row to statistics table
     rows.push({
-        key: '___total',
-        label: 'Total',
+        key: '___privacy_mask',
+        label: 'Privacy Mask (ОПФ)',
+        rectangle: `${maskShapes} / ${maskTracks}`,
+        polygon: '0 / 0',
+        polyline: '0 / 0',
+        points: '0 / 0',
+        ellipse: '0 / 0',
+        cuboid: '0 / 0',
+        skeleton: '0 / 0',
+        mask: '0',
+        tag: 0,
+        manually: maskManually,
+        interpolated: maskInterpolated,
+        total: maskTotalFrames,
+    });
+
+    // Total without masks
+    rows.push({
+        key: '___total_without_masks',
+        label: 'Total (without masks)',
         rectangle: `${data.total.rectangle.shape} / ${data.total.rectangle.track}`,
         polygon: `${data.total.polygon.shape} / ${data.total.polygon.track}`,
         polyline: `${data.total.polyline.shape} / ${data.total.polyline.track}`,
@@ -131,6 +197,30 @@ function StatisticsModalComponent(props: StateToProps & DispatchToProps): JSX.El
         manually: data.total.manually,
         interpolated: data.total.interpolated,
         total: data.total.total,
+    });
+
+    // Total with masks
+    const totalRectShapesWithMasks = data.total.rectangle.shape + maskShapes;
+    const totalRectTracksWithMasks = data.total.rectangle.track + maskTracks;
+    const totalManuallyWithMasks = data.total.manually + maskManually;
+    const totalInterpolatedWithMasks = data.total.interpolated + maskInterpolated;
+    const totalCountWithMasks = data.total.total + maskTotalFrames;
+
+    rows.push({
+        key: '___total_with_masks',
+        label: 'Total (with masks)',
+        rectangle: `${totalRectShapesWithMasks} / ${totalRectTracksWithMasks}`,
+        polygon: `${data.total.polygon.shape} / ${data.total.polygon.track}`,
+        polyline: `${data.total.polyline.shape} / ${data.total.polyline.track}`,
+        points: `${data.total.points.shape} / ${data.total.points.track}`,
+        ellipse: `${data.total.ellipse.shape} / ${data.total.ellipse.track}`,
+        cuboid: `${data.total.cuboid.shape} / ${data.total.cuboid.track}`,
+        skeleton: `${data.total.skeleton.shape} / ${data.total.skeleton.track}`,
+        mask: `${data.total.mask.shape}`,
+        tag: data.total.tag,
+        manually: totalManuallyWithMasks,
+        interpolated: totalInterpolatedWithMasks,
+        total: totalCountWithMasks,
     });
 
     const makeShapesTracksTitle = (title: string): JSX.Element => (
@@ -311,6 +401,45 @@ function StatisticsModalComponent(props: StateToProps & DispatchToProps): JSX.El
                             pagination={false}
                             columns={is2D ? columns : columns3D}
                             dataSource={rows}
+                        />
+                    </Col>
+                </Row>
+                <Row justify='space-around' style={{ marginTop: 16 }}>
+                    <Col span={24}>
+                        <Text className='cvat-text'>Privacy mask statistics (ОПФ)</Text>
+                        <Table
+                            bordered
+                            pagination={false}
+                            size='small'
+                            columns={[
+                                { title: <Text strong>Shapes (ОПФ)</Text>, dataIndex: 'shapes', key: 'shapes' },
+                                { title: <Text strong>Tracks (ОПФ)</Text>, dataIndex: 'tracks', key: 'tracks' },
+                                { title: <Text strong>Total OPF objects</Text>, dataIndex: 'totalObjects', key: 'totalObjects' },
+                                { title: <Text strong>Manual / Keyframes</Text>, dataIndex: 'manually', key: 'manually' },
+                                { title: <Text strong>Interpolated</Text>, dataIndex: 'interpolated', key: 'interpolated' },
+                                { title: <Text strong>Total mask frames</Text>, dataIndex: 'totalMaskFrames', key: 'totalMaskFrames' },
+                                {
+                                    title: <Text strong>Total (without masks)</Text>,
+                                    dataIndex: 'totalWithoutMasks',
+                                    key: 'totalWithoutMasks',
+                                },
+                                {
+                                    title: <Text strong>Total (with masks)</Text>,
+                                    dataIndex: 'totalWithMasks',
+                                    key: 'totalWithMasks',
+                                },
+                            ]}
+                            dataSource={[{
+                                key: 'masks',
+                                shapes: maskShapes,
+                                tracks: maskTracks,
+                                totalObjects: totalMaskObjects,
+                                manually: maskManually,
+                                interpolated: maskInterpolated,
+                                totalMaskFrames: maskTotalFrames,
+                                totalWithoutMasks: data?.total?.total ?? 0,
+                                totalWithMasks: (data?.total?.total ?? 0) + maskTotalFrames,
+                            }]}
                         />
                     </Col>
                 </Row>

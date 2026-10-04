@@ -66,7 +66,7 @@ interface RotatedShapePreviewState {
 }
 
 function checkConstraint(shapeType: string, points: number[], box: Box | null = null): boolean {
-    if (shapeType === 'rectangle') {
+    if (shapeType === 'rectangle' || shapeType === 'mask_region') {
         const [xtl, ytl, xbr, ybr] = points;
         const [width, height] = [xbr - xtl, ybr - ytl];
         return width >= consts.SIZE_THRESHOLD && height >= consts.SIZE_THRESHOLD;
@@ -1592,7 +1592,7 @@ export class DrawHandlerImpl implements DrawHandler {
             }
             this.setupPasteEvents();
         } else {
-            if (this.drawData.shapeType === 'rectangle') {
+            if (this.drawData.shapeType === 'rectangle' || this.drawData.shapeType === 'mask_region') {
                 if (this.drawData.rectDrawingMethod === RectDrawingMethod.ROTATED_POINTS) {
                     this.drawRotatedShapeByPoints();
                 } else if (this.drawData.rectDrawingMethod === RectDrawingMethod.EXTREME_POINTS) {
@@ -1714,7 +1714,7 @@ export class DrawHandlerImpl implements DrawHandler {
         }
 
         const isFillableRect = this.drawData &&
-            this.drawData.shapeType === 'rectangle' &&
+            (this.drawData.shapeType === 'rectangle' || this.drawData.shapeType === 'mask_region') &&
             (this.drawData.rectDrawingMethod === RectDrawingMethod.CLASSIC || this.drawData.initialState);
         const isFillableCuboid = this.drawData &&
             this.drawData.shapeType === 'cuboid' &&

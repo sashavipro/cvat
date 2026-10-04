@@ -14,6 +14,7 @@ import ObjectsListContainer from 'containers/annotation-page/standard-workspace/
 import ObjectSideBarComponent from 'components/annotation-page/standard-workspace/objects-side-bar/objects-side-bar';
 import CanvasPointContextMenuComponent from 'components/annotation-page/canvas/views/canvas2d/canvas-point-context-menu';
 import IssueAggregatorComponent from 'components/annotation-page/review/issues-aggregator';
+import MasksAggregatorComponent from 'components/annotation-page/canvas/masks-aggregator';
 import RemoveConfirmComponent from 'components/annotation-page/standard-workspace/remove-confirm';
 import PropagateConfirmComponent from 'components/annotation-page/standard-workspace/propagate-confirm';
 import BrushTools from 'components/annotation-page/canvas/views/canvas2d/brush-tools';
@@ -29,6 +30,7 @@ export default function StandardWorkspaceComponent(): JSX.Element {
             <CanvasContextMenuContainer />
             <CanvasPointContextMenuComponent />
             <IssueAggregatorComponent />
+            <MasksAggregatorComponent />
             <RemoveConfirmComponent />
         </Layout>
     );

@@ -18,6 +18,7 @@ import { Attribute, Label } from './labels';
 import MLModel from './ml-model';
 import { FrameData, FramesMetaData } from './frames';
 import CloudStorage from './cloud-storage';
+import FrameMaskRegion from './mask-region';
 import Organization from './organization';
 import Webhook from './webhook';
 import AnnotationGuide from './guide';
@@ -484,6 +485,7 @@ function build(): CVATCore {
             Comment,
             Issue,
             FrameData,
+            FrameMaskRegion,
             CloudStorage,
             Organization,
             Webhook,

@@ -4,12 +4,16 @@
 // SPDX-License-Identifier: MIT
 
 import { ActionUnion, createAction, ThunkAction } from 'utils/redux';
+import notification from 'antd/lib/notification';
 import { getCore } from 'cvat-core-wrapper';
 import { NewIssueSource } from 'reducers';
 
 const cvat = getCore();
 
 export enum ReviewActionTypes {
+    FETCH_ISSUES = 'FETCH_ISSUES',
+    FETCH_ISSUES_SUCCESS = 'FETCH_ISSUES_SUCCESS',
+    FETCH_ISSUES_FAILED = 'FETCH_ISSUES_FAILED',
     CREATE_ISSUE = 'CREATE_ISSUE',
     START_ISSUE = 'START_ISSUE',
     FINISH_ISSUE_SUCCESS = 'FINISH_ISSUE_SUCCESS',
@@ -65,9 +69,34 @@ export const reviewActions = {
     switchIssuesHiddenResolvedFlag: (hidden: boolean) => (
         createAction(ReviewActionTypes.SWITCH_RESOLVED_ISSUES_HIDDEN_FLAG, { hidden })
     ),
+    fetchIssues: () => createAction(ReviewActionTypes.FETCH_ISSUES),
+    fetchIssuesSuccess: (issues: any[], frameIssues: any[]) => (
+        createAction(ReviewActionTypes.FETCH_ISSUES_SUCCESS, { issues, frameIssues })
+    ),
+    fetchIssuesFailed: (error: any) => createAction(ReviewActionTypes.FETCH_ISSUES_FAILED, { error }),
 };
 
 export type ReviewActions = ActionUnion<typeof reviewActions>;
+
+export const fetchIssuesAsync = (): ThunkAction => async (dispatch, getState) => {
+    const state = getState();
+    const { instance: jobInstance } = state.annotation.job;
+    const { number: frame } = state.annotation.player.frame;
+    if (!jobInstance) return;
+
+    try {
+        dispatch(reviewActions.fetchIssues());
+        const issues = await jobInstance.issues();
+        const frameIssues = issues.filter((issue: any): boolean => issue.frame === frame);
+        dispatch(reviewActions.fetchIssuesSuccess(issues, frameIssues));
+    } catch (error) {
+        dispatch(reviewActions.fetchIssuesFailed(error));
+        notification.error({
+            message: 'Could not fetch issues',
+            description: error instanceof Error ? error.message : 'Unknown error',
+        });
+    }
+};
 
 export const finishIssueAsync = (message: string): ThunkAction => async (dispatch, getState) => {
     const state = getState();
@@ -105,18 +134,20 @@ export const commentIssueAsync = (id: number, message: string): ThunkAction => a
     const state = getState();
     const {
         auth: { user },
-        review: { frameIssues },
+        review: { frameIssues, issues },
     } = state;
 
     try {
         dispatch(reviewActions.commentIssue(id));
-        const [issue] = frameIssues.filter((_issue: any): boolean => _issue.id === id);
-        await issue.comment({
-            message,
-            owner: user,
-        });
-
-        dispatch(reviewActions.commentIssueSuccess());
+        const issue = frameIssues.find((_issue: any): boolean => _issue.id === id) ||
+            issues.find((_issue: any): boolean => _issue.id === id);
+        if (issue) {
+            await issue.comment({
+                message,
+                owner: user,
+            });
+            dispatch(reviewActions.commentIssueSuccess());
+        }
     } catch (error) {
         dispatch(reviewActions.commentIssueFailed(error));
     }
@@ -126,14 +157,17 @@ export const resolveIssueAsync = (id: number): ThunkAction => async (dispatch, g
     const state = getState();
     const {
         auth: { user },
-        review: { frameIssues },
+        review: { frameIssues, issues },
     } = state;
 
     try {
         dispatch(reviewActions.resolveIssue(id));
-        const [issue] = frameIssues.filter((_issue: any): boolean => _issue.id === id);
-        await issue.resolve(user);
-        dispatch(reviewActions.resolveIssueSuccess());
+        const issue = frameIssues.find((_issue: any): boolean => _issue.id === id) ||
+            issues.find((_issue: any): boolean => _issue.id === id);
+        if (issue) {
+            await issue.resolve(user);
+            dispatch(reviewActions.resolveIssueSuccess());
+        }
     } catch (error) {
         dispatch(reviewActions.resolveIssueFailed(error));
     }
@@ -143,14 +177,17 @@ export const reopenIssueAsync = (id: number): ThunkAction => async (dispatch, ge
     const state = getState();
     const {
         auth: { user },
-        review: { frameIssues },
+        review: { frameIssues, issues },
     } = state;
 
     try {
         dispatch(reviewActions.reopenIssue(id));
-        const [issue] = frameIssues.filter((_issue: any): boolean => _issue.id === id);
-        await issue.reopen(user);
-        dispatch(reviewActions.reopenIssueSuccess());
+        const issue = frameIssues.find((_issue: any): boolean => _issue.id === id) ||
+            issues.find((_issue: any): boolean => _issue.id === id);
+        if (issue) {
+            await issue.reopen(user);
+            dispatch(reviewActions.reopenIssueSuccess());
+        }
     } catch (error) {
         dispatch(reviewActions.reopenIssueFailed(error));
     }
@@ -159,7 +196,7 @@ export const reopenIssueAsync = (id: number): ThunkAction => async (dispatch, ge
 export const deleteIssueAsync = (id: number): ThunkAction => async (dispatch, getState) => {
     const state = getState();
     const {
-        review: { frameIssues },
+        review: { frameIssues, issues },
         annotation: {
             player: {
                 frame: { number: frameNumber },
@@ -168,9 +205,12 @@ export const deleteIssueAsync = (id: number): ThunkAction => async (dispatch, ge
     } = state;
 
     try {
-        const [issue] = frameIssues.filter((_issue: any): boolean => _issue.id === id);
-        await issue.delete();
-        dispatch(reviewActions.removeIssueSuccess(id, frameNumber));
+        const issue = frameIssues.find((_issue: any): boolean => _issue.id === id) ||
+            issues.find((_issue: any): boolean => _issue.id === id);
+        if (issue) {
+            await issue.delete();
+            dispatch(reviewActions.removeIssueSuccess(id, issue.frame ?? frameNumber));
+        }
     } catch (error) {
         dispatch(reviewActions.removeIssueFailed(error));
     }

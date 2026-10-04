@@ -55,6 +55,7 @@ from cvat.apps.engine.cache import (
 )
 from cvat.apps.engine.cloud_provider import Status as CloudStorageStatus
 from cvat.apps.engine.exceptions import CloudStorageMissingError
+from cvat.apps.engine.mask_utils import apply_masks_to_image_bytes, get_interpolated_masks_for_frame
 from cvat.apps.engine.media_extractors import get_mime, get_video_chapters
 from cvat.apps.engine.media_io.audio_provider import (
     IAudioProvider,
@@ -76,6 +77,7 @@ from cvat.apps.engine.models import (
     CloudStorage,
     Comment,
     Data,
+    FrameMaskRegion,
     FrameQuality,
     Issue,
     Job,
@@ -89,10 +91,15 @@ from cvat.apps.engine.models import (
     StorageMethodChoice,
     Task,
 )
+from cvat.apps.engine.mask_utils import (
+    apply_masks_to_image_bytes,
+    get_interpolated_masks_for_frame,
+)
 from cvat.apps.engine.permissions import (
     AnnotationGuidePermission,
     CloudStoragePermission,
     CommentPermission,
+    FrameMaskRegionPermission,
     GuideAssetPermission,
     IssuePermission,
     JobPermission,
@@ -122,6 +129,8 @@ from cvat.apps.engine.serializers import (
     DataSerializer,
     DatasetFileSerializer,
     FileInfoSerializer,
+    FrameMaskRegionReadSerializer,
+    FrameMaskRegionWriteSerializer,
     IssueReadSerializer,
     IssueWriteSerializer,
     JobDataMetaWriteSerializer,
@@ -903,6 +912,8 @@ class _TaskDataGetter(_DataGetter):
         data_num: str | int | None = None,
         allow_empty_preview: bool = False,
         data_range: tuple[int | None, int | None] | None = None,
+        original: bool = False,
+        request: ExtendedRequest | None = None,
     ) -> None:
         super().__init__(
             data_type=data_type,
@@ -912,6 +923,8 @@ class _TaskDataGetter(_DataGetter):
             data_range=data_range,
         )
         self._db_task = db_task
+        self.original = original
+        self.request = request
 
     def _get_media_provider(self) -> TaskFrameProvider | TaskAudioProvider:
         match self._db_task.media_type:
@@ -923,6 +936,38 @@ class _TaskDataGetter(_DataGetter):
                 raise NotFound("Task has no media")
             case _ as media_type:
                 assert False, f"Unknown media type {media_type}"
+
+    def _get_data_response(self):
+        if self.type == "frame":
+            media_provider = self._get_media_provider()
+            if isinstance(media_provider, IAudioProvider):
+                raise ValidationError(
+                    "Frame requests are not available for this data",
+                    code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            data = media_provider.get_frame(self.number, quality=self.quality)
+
+            if self.original:
+                if self.request:
+                    first_job = self._db_task.jobs.first()
+                    if first_job:
+                        perm = FrameMaskRegionPermission.create_scope_view_original(self.request, first_job)
+                        if not perm.check_access().allow:
+                            raise PermissionDenied("You don't have permission to view original unmasked frames")
+                return HttpResponse(data.data.getvalue(), content_type=data.mime)
+
+            segment = self._db_task.segment_set.filter(
+                start_frame__lte=self.number, stop_frame__gte=self.number
+            ).first()
+            job = segment.job_set.first() if segment else None
+            mask_regions = get_interpolated_masks_for_frame(job, self.number) if job else []
+            if mask_regions:
+                masked_data = apply_masks_to_image_bytes(data.data, mask_regions, mime=data.mime)
+                return HttpResponse(masked_data.getvalue(), content_type=data.mime)
+
+            return HttpResponse(data.data.getvalue(), content_type=data.mime)
+        return super()._get_data_response()
 
     def _get_chunk_response_headers(self, chunk_data: DataWithMeta) -> dict[str, str]:
         return self._make_chunk_response_headers(
@@ -942,6 +987,8 @@ class _JobDataGetter(_DataGetter):
         data_index: str | int | None = None,
         allow_empty_preview: bool = False,
         data_range: tuple[int | None, int | None] | None = None,
+        original: bool = False,
+        request: ExtendedRequest | None = None,
     ) -> None:
         possible_data_type_values = ("chunk", "frame", "preview", "context_image")
         possible_quality_values = ("compressed", "original")
@@ -971,6 +1018,8 @@ class _JobDataGetter(_DataGetter):
         self.allow_empty_preview = allow_empty_preview
         self._range = data_range
         self._db_job = db_job
+        self.original = original
+        self.request = request
 
     def _get_media_provider(self) -> JobFrameProvider | JobAudioProvider:
         match self._db_job.segment.task.media_type:
@@ -996,6 +1045,29 @@ class _JobDataGetter(_DataGetter):
                 )
 
             return self._make_ranged_chunk_response(data)
+        elif self.type == "frame":
+            media_provider = self._get_media_provider()
+            if isinstance(media_provider, IAudioProvider):
+                raise ValidationError(
+                    "Frame requests are not available for this data",
+                    code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            data = media_provider.get_frame(self.number, quality=self.quality)
+
+            if self.original:
+                if self.request:
+                    perm = FrameMaskRegionPermission.create_scope_view_original(self.request, self._db_job)
+                    if not perm.check_access().allow:
+                        raise PermissionDenied("You don't have permission to view original unmasked frames")
+                return HttpResponse(data.data.getvalue(), content_type=data.mime)
+
+            mask_regions = get_interpolated_masks_for_frame(self._db_job, self.number)
+            if mask_regions:
+                masked_data = apply_masks_to_image_bytes(data.data, mask_regions, mime=data.mime)
+                return HttpResponse(masked_data.getvalue(), content_type=data.mime)
+
+            return HttpResponse(data.data.getvalue(), content_type=data.mime)
         else:
             return super()._get_data_response()
 
@@ -1661,12 +1733,15 @@ class TaskViewSet(
             except _RangeHeaderSyntaxError:
                 return HttpResponse("Invalid Range header", status=status.HTTP_400_BAD_REQUEST)
 
+            original = str(request.query_params.get("original", "")).lower() in ("true", "1")
             data_getter = _TaskDataGetter(
                 db_task=self._object,
                 data_type=data_type,
                 data_num=data_num,
                 data_quality=data_quality,
                 data_range=data_range,
+                original=original,
+                request=request,
             )
             return data_getter()
 
@@ -2648,6 +2723,7 @@ class JobViewSet(
         except _RangeHeaderSyntaxError:
             return HttpResponse("Invalid Range header", status=status.HTTP_400_BAD_REQUEST)
 
+        original = str(request.query_params.get("original", "")).lower() in ("true", "1")
         data_getter = _JobDataGetter(
             db_job=db_job,
             data_type=data_type,
@@ -2655,6 +2731,8 @@ class JobViewSet(
             data_index=data_index,
             data_num=data_num,
             data_range=data_range,
+            original=original,
+            request=request,
         )
         return data_getter()
 
@@ -2915,6 +2993,50 @@ class JobViewSet(
         response_serializer = JobValidationLayoutReadSerializer(db_job)
         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        methods=["GET"],
+        summary="List frame mask regions for a job",
+        parameters=[
+            OpenApiParameter(
+                "frame",
+                location=OpenApiParameter.QUERY,
+                type=OpenApiTypes.INT,
+                description="A frame number to filter mask regions",
+            ),
+        ],
+        responses={"200": FrameMaskRegionReadSerializer(many=True)},
+    )
+    @extend_schema(
+        methods=["POST"],
+        summary="Create a frame mask region for a job",
+        request=FrameMaskRegionWriteSerializer,
+        responses={"201": FrameMaskRegionReadSerializer},
+    )
+    @action(detail=True, methods=["GET", "POST"], url_path="masks")
+    def masks(self, request: ExtendedRequest, pk: int):
+        db_job = self.get_object()
+
+        if request.method == "POST":
+            data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
+            data["job"] = db_job.id
+            serializer = FrameMaskRegionWriteSerializer(data=data, context={"request": request})
+            serializer.is_valid(raise_exception=True)
+            mask_region = serializer.save(owner=request.user)
+            return Response(
+                FrameMaskRegionReadSerializer(mask_region, context={"request": request}).data,
+                status=status.HTTP_201_CREATED,
+            )
+
+        frame = request.query_params.get("frame")
+        if frame is not None:
+            masks = get_interpolated_masks_for_frame(db_job, int(frame))
+            serializer = FrameMaskRegionReadSerializer(masks, many=True, context={"request": request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        qs = models.FrameMaskRegion.objects.filter(job=db_job)
+        serializer = FrameMaskRegionReadSerializer(qs, many=True, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 @extend_schema(tags=["issues"])
 @extend_schema_view(
@@ -3072,6 +3194,87 @@ class CommentViewSet(
             return CommentReadSerializer
         else:
             return CommentWriteSerializer
+
+    def perform_create(self, serializer, **kwargs):
+        serializer.save(owner=self.request.user)
+
+
+@extend_schema(tags=["masks"])
+@extend_schema_view(
+    retrieve=extend_schema(
+        summary="Get frame mask region details",
+        responses={
+            "200": FrameMaskRegionReadSerializer,
+        },
+    ),
+    list=extend_schema(
+        summary="List frame mask regions",
+        responses={
+            "200": FrameMaskRegionReadSerializer(many=True),
+        },
+    ),
+    partial_update=extend_schema(
+        summary="Update a frame mask region",
+        request=FrameMaskRegionWriteSerializer(partial=True),
+        responses={
+            "200": FrameMaskRegionReadSerializer,
+        },
+    ),
+    create=extend_schema(
+        summary="Create a frame mask region",
+        request=FrameMaskRegionWriteSerializer,
+        parameters=ORGANIZATION_OPEN_API_PARAMETERS,
+        responses={
+            "201": FrameMaskRegionReadSerializer,
+        },
+    ),
+    destroy=extend_schema(
+        summary="Delete a frame mask region",
+        responses={
+            "204": OpenApiResponse(description="The mask region has been deleted"),
+        },
+    ),
+)
+class FrameMaskRegionViewSet(
+    viewsets.GenericViewSet,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    mixins.DestroyModelMixin,
+    PartialUpdateModelMixin,
+):
+    queryset = FrameMaskRegion.objects.prefetch_related(
+        "job__segment__task", "owner", "job"
+    ).all()
+
+    iam_supports_organization_params = True
+    iam_permission_class = FrameMaskRegionPermission
+    search_fields = ("owner",)
+    simple_filters = (*search_fields, "job_id", "task_id", "frame")
+    filter_fields = (*simple_filters, "id")
+    ordering_fields = list(filter_fields)
+    lookup_fields = {
+        "owner": "owner__username",
+        "job_id": "job",
+        "task_id": "job__segment__task__id",
+        "frame": "frame",
+    }
+    ordering = "-id"
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        if self.action == "list":
+            perm = FrameMaskRegionPermission.create_scope_list(self.request)
+            queryset = perm.filter(queryset)
+
+        return queryset
+
+    def get_serializer_class(self):
+        if self.request.method in SAFE_METHODS:
+            return FrameMaskRegionReadSerializer
+        else:
+            return FrameMaskRegionWriteSerializer
 
     def perform_create(self, serializer, **kwargs):
         serializer.save(owner=self.request.user)

@@ -2,7 +2,7 @@
 // Copyright (C) CVAT.ai Corporation
 //
 // SPDX-License-Identifier: MIT
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Row, Col } from 'antd/lib/grid';
 
 import { CloseOutlined } from '@ant-design/icons';
@@ -46,6 +46,10 @@ function ColorPicker(props: Props, ref: React.Ref<any>): JSX.Element {
 
     const [colorState, setColorState] = useState(value);
     const [pickerVisible, setPickerVisible] = useState(false);
+
+    useEffect(() => {
+        setColorState(value);
+    }, [value]);
 
     const colors = [...core.enums.colors];
 

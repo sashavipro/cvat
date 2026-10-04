@@ -35,6 +35,11 @@ from cvat.apps.engine import models
 from cvat.apps.engine.cache import MediaCache
 from cvat.apps.engine.label_colors import get_label_color
 from cvat.apps.engine.lazy_list import LazyList
+from cvat.apps.engine.mask_utils import (
+    apply_masks_to_cv_image,
+    apply_masks_to_image_bytes,
+    get_interpolated_masks_for_frame,
+)
 from cvat.apps.engine.media_io.frame_provider import FrameOutputType, TaskFrameProvider
 from cvat.apps.engine.models import (
     AttributeSpec,
@@ -1657,6 +1662,7 @@ class ProjectData(InstanceLabelData):
 @attrs(frozen=True, auto_attribs=True)
 class MediaSource:
     db_task: Task
+    db_job: Job | None = None
 
     @property
     def is_video(self) -> bool:
@@ -1683,6 +1689,19 @@ class MediaProvider2D(MediaProvider):
     def get_media_for_frame(self, source_id: int, frame_index: int, **image_kwargs) -> dm.Image:
         source = self._sources[source_id]
 
+        def _get_job(frame_idx: int):
+            if getattr(source, "db_job", None):
+                return source.db_job
+            if hasattr(source, "db_task") and source.db_task:
+                segment = source.db_task.segment_set.filter(
+                    start_frame__lte=frame_idx, stop_frame__gte=frame_idx
+                ).first()
+                if segment:
+                    return segment.job_set.first()
+                if source.db_task.segment_set.exists():
+                    return source.db_task.segment_set.first().job_set.first()
+            return None
+
         if source.is_video:
 
             def video_frame_loader():
@@ -1690,9 +1709,14 @@ class MediaProvider2D(MediaProvider):
 
                 # optimization for videos: use numpy arrays instead of bytes
                 # some formats or transforms can require image data
-                return self._frame_provider.get_frame(
+                frame_data = self._frame_provider.get_frame(
                     frame_index, quality=FrameQuality.ORIGINAL, out_type=FrameOutputType.NUMPY_ARRAY
                 ).data
+                job = _get_job(frame_index)
+                mask_regions = get_interpolated_masks_for_frame(job, frame_index) if job else []
+                if mask_regions:
+                    frame_data = apply_masks_to_cv_image(frame_data.copy(), mask_regions)
+                return frame_data
 
             return dm.Image.from_numpy(data=video_frame_loader, **image_kwargs)
         else:
@@ -1701,9 +1725,14 @@ class MediaProvider2D(MediaProvider):
                 self._load_source(source_id, source)
 
                 # for images use encoded data to avoid recoding
-                return self._frame_provider.get_frame(
+                raw_bytes = self._frame_provider.get_frame(
                     frame_index, quality=FrameQuality.ORIGINAL, out_type=FrameOutputType.BUFFER
                 ).data.getvalue()
+                job = _get_job(frame_index)
+                mask_regions = get_interpolated_masks_for_frame(job, frame_index) if job else []
+                if mask_regions:
+                    raw_bytes = apply_masks_to_image_bytes(raw_bytes, mask_regions).getvalue()
+                return raw_bytes
 
             return dm.Image.from_bytes(data=image_loader, **image_kwargs)
 
@@ -1942,9 +1971,14 @@ class CvatDataExtractor(dm.DatasetBase, CVATDataExtractorMixin):
             assert False
 
         if self._dimension == DimensionType.DIM_3D or include_images:
-            self._media_provider = MEDIA_PROVIDERS_BY_DIMENSION[self._dimension](
-                {task.id: MediaSource(task) for task in db_tasks}
-            )
+            if isinstance(instance_data, JobData):
+                self._media_provider = MEDIA_PROVIDERS_BY_DIMENSION[self._dimension](
+                    {db_tasks[0].id: MediaSource(db_tasks[0], db_job=instance_data.db_instance)}
+                )
+            else:
+                self._media_provider = MEDIA_PROVIDERS_BY_DIMENSION[self._dimension](
+                    {task.id: MediaSource(task) for task in db_tasks}
+                )
 
         self._ext_per_task: dict[int, str] = {
             task.id: TaskFrameProvider.VIDEO_FRAME_EXT if is_video else ""

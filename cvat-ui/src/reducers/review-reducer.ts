@@ -65,6 +65,36 @@ export default function (state: ReviewState = defaultState, action: any): Review
                 },
             };
         }
+        case ReviewActionTypes.FETCH_ISSUES: {
+            return {
+                ...state,
+                fetching: {
+                    ...state.fetching,
+                    jobId: 1,
+                },
+            };
+        }
+        case ReviewActionTypes.FETCH_ISSUES_SUCCESS: {
+            const { issues, frameIssues } = action.payload;
+            return {
+                ...state,
+                issues,
+                frameIssues,
+                fetching: {
+                    ...state.fetching,
+                    jobId: null,
+                },
+            };
+        }
+        case ReviewActionTypes.FETCH_ISSUES_FAILED: {
+            return {
+                ...state,
+                fetching: {
+                    ...state.fetching,
+                    jobId: null,
+                },
+            };
+        }
         case ReviewActionTypes.SUBMIT_REVIEW: {
             const { jobId } = action.payload;
             return {

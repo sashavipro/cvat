@@ -63,6 +63,10 @@ export class CanvasViewImpl implements CanvasView, Listener {
     private content: SVGSVGElement;
     private attachmentBoard: HTMLDivElement;
     private adoptedContent: SVG.Container;
+    private maskLayer: SVG.Container;
+    private drawnMaskRegions: Record<string, SVG.Element>;
+    private activeMaskRegionId: string | null;
+    private activeMaskRegion: any;
     private canvas: HTMLDivElement;
     private gridPath: SVGPathElement;
     private gridPattern: SVGPatternElement;
@@ -357,7 +361,31 @@ export class CanvasViewImpl implements CanvasView, Listener {
 
         if (data) {
             const { clientID, elements } = data as any;
-            const points = data.points || elements.map((el: any) => el.points).flat();
+            const points = data.points || (elements ? elements.map((el: any) => el.points).flat() : null);
+
+            const activeDrawData = prevDrawData || this.controller.drawData;
+            if (data?.shapeType === 'mask_region' || activeDrawData?.shapeType === 'mask_region' || typeof activeDrawData?.onMaskRegionDrawn === 'function') {
+                if (typeof activeDrawData?.onMaskRegionDrawn === 'function' && points) {
+                    activeDrawData.onMaskRegionDrawn(points);
+                }
+                const event: CustomEvent = new CustomEvent('canvas.maskregiondrawn', {
+                    bubbles: false,
+                    cancelable: true,
+                    detail: {
+                        points,
+                        duration,
+                    },
+                });
+                this.canvas.dispatchEvent(event);
+                // Do not dispatch canvas.canceled here – it would reset
+                // activeControl to CURSOR before the async mask-creation
+                // finishes, which causes the popover to flash open.
+                // createMaskRegionAsync handles the cleanup itself.
+                this.mode = Mode.IDLE;
+                this.canvas.style.cursor = '';
+                return;
+            }
+
             if (typeof clientID === 'number') {
                 const [state] = this.controller.objects
                     .filter((_state: any): boolean => _state.clientID === clientID);
@@ -960,6 +988,182 @@ export class CanvasViewImpl implements CanvasView, Listener {
 
             if (issueRegions[+issueRegion].hidden) {
                 this.drawnIssueRegions[+issueRegion].style({ display: 'none' });
+            }
+        }
+    }
+
+    private deactivateMaskRegion(): void {
+        if (this.activeMaskRegionId !== null && this.drawnMaskRegions && this.drawnMaskRegions[this.activeMaskRegionId]) {
+            const shape = this.drawnMaskRegions[this.activeMaskRegionId];
+            try {
+                (shape as any).off('resizedone');
+                (shape as any).off('dragend');
+                (shape as any).draggable(false);
+                (shape as any).resize('stop');
+                (shape as any).selectize(false);
+            } catch (_) {}
+            this.activeMaskRegionId = null;
+            this.activeMaskRegion = null;
+        }
+        if (this.maskLayer) {
+            for (const el of Array.from(this.maskLayer.node.querySelectorAll('.svg_select_boundingRect, .svg_select_points'))) {
+                el.parentNode?.removeChild(el);
+            }
+        }
+    }
+
+    private activateMaskRegion(id: string, region: any, shape: SVG.Element): void {
+        if (this.activeMaskRegionId === id) return;
+        this.deactivateMaskRegion();
+
+        this.activeMaskRegionId = id;
+        this.activeMaskRegion = region;
+        try {
+            // Remove any previous interaction handlers first
+            (shape as any).off('resizedone');
+            (shape as any).off('dragend');
+
+            (shape as any).selectize(true, {
+                pointSize: (2 * this.configuration.controlPointsSize) / this.geometry.scale,
+                rotationPoint: false,
+                pointType: 'rect',
+            });
+
+            (shape as any)
+                .resize({ snapToGrid: 0.1 })
+                .on('resizedone', () => {
+                    const rawPoints = readPointsFromShape(shape as SVG.Shape);
+                    const newPoints = this.translateFromCanvas(rawPoints);
+                    this.canvas.dispatchEvent(new CustomEvent('canvas.maskregionupdated', {
+                        bubbles: false,
+                        cancelable: true,
+                        detail: {
+                            id: region.id,
+                            region: this.activeMaskRegion || region,
+                            points: newPoints,
+                        },
+                    }));
+                });
+
+            (shape as any)
+                .draggable()
+                .on('dragend', () => {
+                    const rawPoints = readPointsFromShape(shape as SVG.Shape);
+                    const newPoints = this.translateFromCanvas(rawPoints);
+                    this.canvas.dispatchEvent(new CustomEvent('canvas.maskregionupdated', {
+                        bubbles: false,
+                        cancelable: true,
+                        detail: {
+                            id: region.id,
+                            region: this.activeMaskRegion || region,
+                            points: newPoints,
+                        },
+                    }));
+                });
+        } catch (_) {}
+    }
+
+    private setupMaskRegions(maskRegions: any[]): void {
+        const currentRegions = Array.isArray(maskRegions) ? maskRegions : [];
+        const currentIds = new Set(currentRegions.map((r, idx) => (r.id != null ? `${r.id}` : `idx_${idx}`)));
+
+        if (!this.drawnMaskRegions) {
+            this.drawnMaskRegions = {};
+        }
+
+        if (this.activeMaskRegionId && !currentIds.has(this.activeMaskRegionId)) {
+            this.deactivateMaskRegion();
+        }
+
+        for (const id of Object.keys(this.drawnMaskRegions)) {
+            if (!currentIds.has(id)) {
+                if (this.activeMaskRegionId === id) {
+                    this.deactivateMaskRegion();
+                }
+                this.drawnMaskRegions[id].remove();
+                delete this.drawnMaskRegions[id];
+            }
+        }
+
+        if (this.maskLayer) {
+            this.maskLayer.style('display', currentRegions.length === 0 ? 'none' : 'block');
+        }
+
+        const targetGroup = this.maskLayer || this.adoptedContent;
+
+        for (let i = 0; i < currentRegions.length; i++) {
+            const region = currentRegions[i];
+            const id = region.id != null ? `${region.id}` : `idx_${i}`;
+            const rawPoints = region.points;
+            if (!Array.isArray(rawPoints) || rawPoints.length < 4) continue;
+
+            const points = this.translateToCanvas(rawPoints);
+            const fillColor = region.color || '#000000';
+
+            if (id in this.drawnMaskRegions) {
+                if (this.activeMaskRegionId === id) {
+                    this.deactivateMaskRegion();
+                }
+                this.drawnMaskRegions[id].remove();
+                delete this.drawnMaskRegions[id];
+            }
+
+            if (points.length === 4) {
+                const [x1, y1, x2, y2] = points;
+                const left = Math.min(x1, x2);
+                const top = Math.min(y1, y2);
+                const width = Math.abs(x2 - x1);
+                const height = Math.abs(y2 - y1);
+
+                const rect = targetGroup
+                    .rect(width, height)
+                    .move(left, top)
+                    .addClass('cvat_canvas_mask_region')
+                    .attr({
+                        id: `cvat_canvas_mask_region_${id}`,
+                        fill: fillColor,
+                        opacity: 1,
+                        cursor: 'move',
+                    });
+
+                rect.remove = (): any => {
+                    try {
+                        (rect as any).selectize(false);
+                    } catch (_) {}
+                    return (SVG.Element.prototype as any).remove.call(rect);
+                };
+
+                rect.on('mousedown', (e: MouseEvent) => {
+                    e.stopPropagation();
+                    this.activateMaskRegion(id, region, rect);
+                });
+
+                this.drawnMaskRegions[id] = rect;
+            } else if (points.length >= 6 && points.length % 2 === 0) {
+                const stringified = stringifyPoints(points);
+                const poly = targetGroup
+                    .polygon(stringified)
+                    .addClass('cvat_canvas_mask_region')
+                    .attr({
+                        id: `cvat_canvas_mask_region_${id}`,
+                        fill: fillColor,
+                        opacity: 1,
+                        cursor: 'move',
+                    });
+
+                poly.remove = (): any => {
+                    try {
+                        (poly as any).selectize(false);
+                    } catch (_) {}
+                    return (SVG.Element.prototype as any).remove.call(poly);
+                };
+
+                poly.on('mousedown', (e: MouseEvent) => {
+                    e.stopPropagation();
+                    this.activateMaskRegion(id, region, poly);
+                });
+
+                this.drawnMaskRegions[id] = poly;
             }
         }
     }
@@ -1902,6 +2106,19 @@ export class CanvasViewImpl implements CanvasView, Listener {
         if (code.includes('control')) {
             this.ctrlPressed = true;
         }
+
+        if (code === 'delete' || code === 'backspace') {
+            if (this.activeMaskRegionId !== null) {
+                const id = this.activeMaskRegionId;
+                const region = this.activeMaskRegion;
+                this.deactivateMaskRegion();
+                this.canvas.dispatchEvent(new CustomEvent('canvas.maskregiondeleted', {
+                    bubbles: false,
+                    cancelable: true,
+                    detail: { id: Number(id) || id, region },
+                }));
+            }
+        }
     };
 
     private onKeyUp = (e: KeyboardEvent): void => {
@@ -1979,6 +2196,9 @@ export class CanvasViewImpl implements CanvasView, Listener {
 
         this.content = window.document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         this.adoptedContent = SVG.adopt((this.content as any) as HTMLElement) as SVG.Container;
+        this.maskLayer = this.adoptedContent.group().attr({ id: 'cvat_canvas_mask_layer' });
+        this.drawnMaskRegions = {};
+        this.activeMaskRegionId = null;
 
         this.attachmentBoard = window.document.createElement('div');
 
@@ -2139,6 +2359,7 @@ export class CanvasViewImpl implements CanvasView, Listener {
         });
 
         this.canvas.addEventListener('mousedown', (event): void => {
+            this.deactivateMaskRegion();
             if ([0, 1].includes(event.button)) {
                 if (
                     [Mode.IDLE, Mode.DRAG_CANVAS, Mode.MERGE, Mode.SPLIT]
@@ -2377,6 +2598,7 @@ export class CanvasViewImpl implements CanvasView, Listener {
             // Canvas geometry is going to be changed. Old object positions aren't valid any more
             this.setupObjects([]);
             this.setupIssueRegions({});
+            this.setupMaskRegions([]);
             this.moveCanvas();
             this.resizeCanvas();
             this.canvas.dispatchEvent(
@@ -2411,6 +2633,8 @@ export class CanvasViewImpl implements CanvasView, Listener {
             this.canvas.dispatchEvent(event);
         } else if (reason === UpdateReasons.ISSUE_REGIONS_UPDATED) {
             this.setupIssueRegions(this.controller.issueRegions);
+        } else if (reason === UpdateReasons.MASK_REGIONS_UPDATED) {
+            this.setupMaskRegions(this.controller.maskRegions);
         } else if (reason === UpdateReasons.GRID_UPDATED) {
             const size: Size = this.geometry.grid;
             this.gridPattern.setAttribute('width', `${size.width}`);

@@ -850,6 +850,7 @@ export enum ActiveControl {
     OPENCV_TOOLS = 'opencv_tools',
     AUDIO_REGION_CREATE = 'audio_region_create',
     AUDIO_REGION_RECORD = 'audio_region_record',
+    REDACT = 'redact',
 }
 
 export enum StatesOrdering {
@@ -1241,6 +1242,20 @@ export interface NavigationState {
     prevLocation: string | null;
 }
 
+export interface MasksState {
+    maskRegions: any[];
+    frameMaskRegions: any[];
+    hiddenMasks: (number | string)[];
+    fetching: boolean;
+    saving: boolean;
+    viewOriginal: boolean;
+    canViewOriginal: boolean;
+    currentFrame: number;
+    selectedColor: string;
+    activeMaskType: 'shape' | 'track';
+    error: any | null;
+}
+
 export interface CombinedState {
     auth: AuthState;
     growth: GrowthState;
@@ -1269,6 +1284,7 @@ export interface CombinedState {
     bulkActions: BulkActionsState;
     serverAPI: ServerAPIState;
     navigation: NavigationState;
+    masks: MasksState;
 }
 
 export interface Indexable {

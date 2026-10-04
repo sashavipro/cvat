@@ -17,7 +17,7 @@ import {
     SerializedRegister, SerializedJob, SerializedGuide, SerializedAsset, SerializedAPISchema,
     SerializedInvitationData, SerializedCloudStorage, SerializedFramesMetaData, SerializedCollection,
     SerializedRequest, SerializedJobValidationLayout, SerializedTaskValidationLayout, SerializedConsensusSettingsData,
-    SerializedApiToken, SerializedUserGrowthData,
+    SerializedApiToken, SerializedUserGrowthData, SerializedFrameMaskRegion,
 } from './server-response-types';
 import {
     SerializedQualityConflictData, SerializedQualityReportData,
@@ -29,6 +29,7 @@ import {
     ProjectsFilter, TasksFilter, JobsFilter,
     APIQualitySettingsFilter, APIQualityConflictsFilter, APIQualityReportsFilter,
     APIAnalyticsEventsFilter, APIConsensusSettingsFilter, APIApiTokensFilter, APIQualityRequirementsFilter,
+    SerializedFrameMaskRegionWrite,
 } from './server-request-types';
 import { PaginatedResource, SerializedModel, UpdateStatusData } from './core-types';
 import { Storage } from './storage';
@@ -1573,6 +1574,59 @@ async function deleteIssue(issueID: number): Promise<void> {
     }
 }
 
+async function getMaskRegions(jobId: number, frame?: number): Promise<SerializedFrameMaskRegion[]> {
+    const { backendAPI } = config;
+    try {
+        const response = await Axios.get(`${backendAPI}/jobs/${jobId}/masks`, {
+            params: {
+                ...(typeof frame === 'number' ? { frame } : {}),
+                ...enableOrganization(),
+            },
+        });
+        return response.data;
+    } catch (errorData) {
+        throw generateError(errorData);
+    }
+}
+
+async function createMaskRegion(jobId: number, data: SerializedFrameMaskRegionWrite): Promise<SerializedFrameMaskRegion> {
+    const { backendAPI } = config;
+    try {
+        const response = await Axios.post(`${backendAPI}/jobs/${jobId}/masks`, data, {
+            params: { ...enableOrganization() },
+        });
+        return response.data;
+    } catch (errorData) {
+        throw generateError(errorData);
+    }
+}
+
+async function updateMaskRegion(
+    maskRegionId: number,
+    data: Partial<SerializedFrameMaskRegionWrite>,
+): Promise<SerializedFrameMaskRegion> {
+    const { backendAPI } = config;
+    try {
+        const response = await Axios.patch(`${backendAPI}/masks/${maskRegionId}`, data, {
+            params: { ...enableOrganization() },
+        });
+        return response.data;
+    } catch (errorData) {
+        throw generateError(errorData);
+    }
+}
+
+async function deleteMaskRegion(maskRegionId: number): Promise<void> {
+    const { backendAPI } = config;
+    try {
+        await Axios.delete(`${backendAPI}/masks/${maskRegionId}`, {
+            params: { ...enableOrganization() },
+        });
+    } catch (errorData) {
+        throw generateError(errorData);
+    }
+}
+
 type JobWritePayload = Partial<Omit<SerializedJob, 'assignee'> & { assignee: number | null }>;
 async function saveJob(id: number, jobData: JobWritePayload): Promise<SerializedJob> {
     const { backendAPI } = config;
@@ -1722,6 +1776,30 @@ function getPreview(instance: 'projects' | 'tasks' | 'jobs' | 'cloudstorages' | 
             );
         }
     };
+}
+
+async function getFrame(
+    jid: number,
+    frame: number,
+    quality: 'compressed' | 'original' = 'original',
+    original: boolean = false,
+): Promise<ArrayBuffer> {
+    const { backendAPI } = config;
+    try {
+        const response = await Axios.get(`${backendAPI}/jobs/${jid}/data`, {
+            params: {
+                ...enableOrganization(),
+                quality,
+                type: 'frame',
+                number: frame,
+                ...(original ? { original: true } : {}),
+            },
+            responseType: 'arraybuffer',
+        });
+        return response.data;
+    } catch (errorData) {
+        throw generateError(errorData);
+    }
 }
 
 async function getImageContext(jid: number, frame: number): Promise<ArrayBuffer> {
@@ -2815,6 +2893,7 @@ export default Object.freeze({
 
     frames: Object.freeze({
         getData,
+        getFrame,
         getAudioChunk,
         getMeta,
         saveMeta,
@@ -2847,6 +2926,13 @@ export default Object.freeze({
         update: updateIssue,
         get: getIssues,
         delete: deleteIssue,
+    }),
+
+    maskRegions: Object.freeze({
+        get: getMaskRegions,
+        create: createMaskRegion,
+        update: updateMaskRegion,
+        delete: deleteMaskRegion,
     }),
 
     comments: Object.freeze({

@@ -19,6 +19,8 @@ import {
     SerializedCollection, SerializedJob,
     SerializedLabel, SerializedTask,
 } from './server-response-types';
+import { SerializedFrameMaskRegionWrite } from './server-request-types';
+import FrameMaskRegion from './mask-region';
 import { type AudioIntervalState } from './annotations-objects/audio-interval-state';
 import AnnotationGuide from './guide';
 import { FrameData, FramesMetaData } from './frames';
@@ -403,6 +405,9 @@ function buildDuplicatedAPI(prototype): void {
                     const result = await PluginRegistry.apiWrapper.call(this, prototype.actions.get);
                     return result;
                 },
+                do(action, undo, redo, clientIds = [], frame = null) {
+                    return prototype.actions.do.implementation.call(this, action, undo, redo, clientIds, frame);
+                },
             },
             writable: true,
         }),
@@ -493,6 +498,13 @@ export class Session {
             undo: [HistoryActions, number | null][];
             redo: [HistoryActions, number | null][];
         }>;
+        do: (
+            action: HistoryActions,
+            undo: () => void | Promise<void>,
+            redo: () => void | Promise<void>,
+            clientIds?: number[],
+            frame?: number | null,
+        ) => void;
     };
 
     public frames: {
@@ -566,6 +578,7 @@ export class Session {
             freeze: Object.getPrototypeOf(this).actions.freeze.bind(this),
             clear: Object.getPrototypeOf(this).actions.clear.bind(this),
             get: Object.getPrototypeOf(this).actions.get.bind(this),
+            do: Object.getPrototypeOf(this).actions.do.bind(this),
         };
 
         this.frames = {
@@ -591,6 +604,13 @@ export class Session {
 type InitializerType = Readonly<Partial<Omit<SerializedJob, 'labels'> & { labels?: SerializedLabel[] }>>;
 
 export class Job extends Session {
+    public readonly maskRegions: {
+        get(frame?: number): Promise<FrameMaskRegion[]>;
+        save(region: FrameMaskRegion | SerializedFrameMaskRegionWrite): Promise<FrameMaskRegion>;
+        update(regionId: number, data: Partial<SerializedFrameMaskRegionWrite>): Promise<FrameMaskRegion>;
+        delete(regionId: number): Promise<void>;
+    };
+
     #data: {
         id?: number;
         assignee: User | null;
@@ -684,6 +704,17 @@ export class Job extends Session {
 
         // to avoid code duplication set mutable field in the dedicated method
         this.reinit(initialData);
+
+        this.maskRegions = Object.freeze({
+            get: (frame?: number) => PluginRegistry.apiWrapper.call(this, Job.prototype.getMaskRegions, frame),
+            save: (region: FrameMaskRegion | SerializedFrameMaskRegionWrite) => (
+                PluginRegistry.apiWrapper.call(this, Job.prototype.saveMaskRegion, region)
+            ),
+            update: (regionId: number, data: Partial<SerializedFrameMaskRegionWrite>) => (
+                PluginRegistry.apiWrapper.call(this, Job.prototype.updateMaskRegion, regionId, data)
+            ),
+            delete: (regionId: number) => PluginRegistry.apiWrapper.call(this, Job.prototype.deleteMaskRegion, regionId),
+        });
     }
 
     protected reinit(data: InitializerType): void {
@@ -869,6 +900,26 @@ export class Job extends Session {
 
     async mergeConsensusJobs(): Promise<string> {
         const result = await PluginRegistry.apiWrapper.call(this, Job.prototype.mergeConsensusJobs);
+        return result;
+    }
+
+    async getMaskRegions(frame?: number): Promise<FrameMaskRegion[]> {
+        const result = await PluginRegistry.apiWrapper.call(this, Job.prototype.getMaskRegions, frame);
+        return result;
+    }
+
+    async saveMaskRegion(region: FrameMaskRegion | SerializedFrameMaskRegionWrite): Promise<FrameMaskRegion> {
+        const result = await PluginRegistry.apiWrapper.call(this, Job.prototype.saveMaskRegion, region);
+        return result;
+    }
+
+    async updateMaskRegion(regionId: number, data: Partial<SerializedFrameMaskRegionWrite>): Promise<FrameMaskRegion> {
+        const result = await PluginRegistry.apiWrapper.call(this, Job.prototype.updateMaskRegion, regionId, data);
+        return result;
+    }
+
+    async deleteMaskRegion(regionId: number): Promise<void> {
+        const result = await PluginRegistry.apiWrapper.call(this, Job.prototype.deleteMaskRegion, regionId);
         return result;
     }
 }

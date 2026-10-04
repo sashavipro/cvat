@@ -27,6 +27,7 @@ import {
     resolvePreviewResponse,
 } from './frames';
 import Issue from './issue';
+import FrameMaskRegion from './mask-region';
 import {
     SerializedTask, SerializedJobValidationLayout, SerializedTaskValidationLayout,
 } from './server-response-types';
@@ -144,6 +145,56 @@ export function implementJob(Job: typeof JobClass): typeof JobClass {
                 message,
             });
             return new Issue(result);
+        },
+    });
+
+    Object.defineProperty(Job.prototype.getMaskRegions, 'implementation', {
+        value: async function getMaskRegionsImplementation(
+            this: JobClass,
+            frame?: number,
+        ): ReturnType<typeof JobClass.prototype.getMaskRegions> {
+            const rawRegions = await serverProxy.maskRegions.get(this.id, frame);
+            return rawRegions.map((region) => new FrameMaskRegion(region));
+        },
+    });
+
+    Object.defineProperty(Job.prototype.saveMaskRegion, 'implementation', {
+        value: async function saveMaskRegionImplementation(
+            this: JobClass,
+            region: Parameters<typeof JobClass.prototype.saveMaskRegion>[0],
+        ): ReturnType<typeof JobClass.prototype.saveMaskRegion> {
+            const payload = {
+                job: this.id,
+                frame: region.frame,
+                points: region.points,
+                z_order: 'zOrder' in region ? (region as FrameMaskRegion).zOrder : (region as any).z_order,
+                color: (region as any).color || '#000000',
+                track_id: 'trackId' in region ? (region as FrameMaskRegion).trackId : (region as any).track_id,
+                is_keyframe: 'isKeyframe' in region ? (region as FrameMaskRegion).isKeyframe : ((region as any).is_keyframe ?? true),
+                outside: 'outside' in region ? (region as FrameMaskRegion).outside : ((region as any).outside ?? false),
+            };
+            const result = await serverProxy.maskRegions.create(this.id, payload);
+            return new FrameMaskRegion(result);
+        },
+    });
+
+    Object.defineProperty(Job.prototype.updateMaskRegion, 'implementation', {
+        value: async function updateMaskRegionImplementation(
+            this: JobClass,
+            regionId: Parameters<typeof JobClass.prototype.updateMaskRegion>[0],
+            data: Parameters<typeof JobClass.prototype.updateMaskRegion>[1],
+        ): ReturnType<typeof JobClass.prototype.updateMaskRegion> {
+            const result = await serverProxy.maskRegions.update(regionId, data);
+            return new FrameMaskRegion(result);
+        },
+    });
+
+    Object.defineProperty(Job.prototype.deleteMaskRegion, 'implementation', {
+        value: async function deleteMaskRegionImplementation(
+            this: JobClass,
+            regionId: Parameters<typeof JobClass.prototype.deleteMaskRegion>[0],
+        ): ReturnType<typeof JobClass.prototype.deleteMaskRegion> {
+            await serverProxy.maskRegions.delete(regionId);
         },
     });
 
@@ -660,6 +711,19 @@ export function implementJob(Job: typeof JobClass): typeof JobClass {
             this: JobClass,
         ): ReturnType<typeof JobClass.prototype.actions.get> {
             return Promise.resolve(getHistory(this).get());
+        },
+    });
+
+    Object.defineProperty(Job.prototype.actions.do, 'implementation', {
+        value: function doActionImplementation(
+            this: JobClass,
+            action: any,
+            undo: () => void | Promise<void>,
+            redo: () => void | Promise<void>,
+            clientIds: number[] = [],
+            frame: number | null = null,
+        ) {
+            getHistory(this).do(action, undo, redo, clientIds, frame);
         },
     });
 
@@ -1479,6 +1543,19 @@ export function implementTask(Task: typeof TaskClass): typeof TaskClass {
             this: TaskClass,
         ): ReturnType<typeof TaskClass.prototype.actions.get> {
             return Promise.resolve(getHistory(this).get());
+        },
+    });
+
+    Object.defineProperty(Task.prototype.actions.do, 'implementation', {
+        value: function doActionImplementation(
+            this: TaskClass,
+            action: any,
+            undo: () => void | Promise<void>,
+            redo: () => void | Promise<void>,
+            clientIds: number[] = [],
+            frame: number | null = null,
+        ) {
+            getHistory(this).do(action, undo, redo, clientIds, frame);
         },
     });
 

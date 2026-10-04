@@ -41,6 +41,7 @@ import GroupControl, { Props as GroupControlProps } from './group-control';
 import JoinControl, { Props as JoinControlProps } from './join-control';
 import SplitControl, { Props as SplitControlProps } from './split-control';
 import SliceControl, { Props as SliceControlProps } from './slice-control';
+import RedactControl, { Props as RedactControlProps } from './redact-control';
 
 type Label = CombinedState['annotation']['job']['labels'][0];
 
@@ -145,6 +146,7 @@ const ObservedGroupControl = ControlVisibilityObserver<GroupControlProps>(GroupC
 const ObservedJoinControl = ControlVisibilityObserver<JoinControlProps>(JoinControl, 'JoinControl');
 const ObservedSplitControl = ControlVisibilityObserver<SplitControlProps>(SplitControl, 'SplitControl');
 const ObservedSliceControl = ControlVisibilityObserver<SliceControlProps>(SliceControl, 'SliceControl');
+const ObservedRedactControl = ControlVisibilityObserver<RedactControlProps>(RedactControl, 'RedactControl');
 
 export default function ControlsSideBarComponent(props: Props): JSX.Element {
     const {
@@ -464,6 +466,11 @@ export default function ControlsSideBarComponent(props: Props): JSX.Element {
                 }
 
                 <ObservedSnapToolsControl />
+                <ObservedRedactControl
+                    canvasInstance={canvasInstance}
+                    activeControl={activeControl}
+                    disabled={Boolean(frameData?.deleted)}
+                />
 
                 <hr />
 
